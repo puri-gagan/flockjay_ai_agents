@@ -125,6 +125,7 @@ Gated by `x-api-key`. Streams the agent's reply as plain UTF-8 text (chunked via
 
 - `session_id` — optional. Auto-generated if omitted; either way, the resolved id is returned in the `X-Session-Id` response header. Reuse it across requests for stateful conversation.
 - `attachments` — optional. Each is ingested on first reference and cached for the session; subsequent requests with the same `id` skip re-ingestion.
+- `attachments[].url` — must be HTTP(S) reachable from the server. For local testing, drop a file into `./samples/` and reference it at `http://localhost:8000/samples/<filename>` (the app mounts that directory as static — no second web server needed).
 
 **Response**
 
@@ -144,7 +145,7 @@ curl -N -X POST http://localhost:8000/chat \
     "session_id": "demo-1",
     "message": "Find past calls where I handled this same pricing objection.",
     "attachments": [
-      {"id": "call-yesterday", "url": "http://localhost:9000/transcript.json", "type": "transcript"}
+      {"id": "call-yesterday", "url": "http://localhost:8000/samples/transcript.json", "type": "transcript"}
     ]
   }'
 ```
