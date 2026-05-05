@@ -10,6 +10,7 @@ Agentic chat backend for Flockjay AI Agents. One `POST /chat` endpoint, one root
 | **LLM**            | `LLM_MODEL` constant in `[app/agent/root_agent.py](app/agent/root_agent.py)`; Gemini routes natively, everything else via ADK's `LiteLlm` wrapper |
 | **Attachment RAG** | Chroma in-memory + Gemini `gemini-embedding-001`, token-aware chunking via tiktoken                                                               |
 | **MCP OAuth**      | `npx mcp-remote` stdio child (handles discovery, DCR, browser flow, token cache, silent refresh)                                                  |
+| **Error recovery** | ADK `ReflectAndRetryToolPlugin` (subclassed) — converts MCP `isError:true`, raised tool exceptions, and hallucinated tool names into reflection guidance the model retries against |
 | **Packaging**      | Poetry, Python 3.12                                                                                                                               |
 
 
@@ -177,7 +178,35 @@ Gemini's native parallel function calling handles this. We do not orchestrate it
 
 ### Graceful degradation
 
-Every tool wrapper returns a typed result. On empty / not-found / threshold miss, it returns `{ok: false, reason: "..."}` and includes `available_attachment_ids` when relevant. The instruction bans fabrication explicitly: *"Do NOT invent deals, calls, scorecards, or content."*
+Two distinct contracts feed the model:
+
+- **Attachment tools** (`search_attachment`, `list_active_attachments`) return `{ok: true, …}` on success and `{ok: false, reason: "…"}` on empty / not-found / similarity threshold miss, with `available_attachment_ids` included when relevant.
+- **Flockjay MCP tools** return raw entities (`whoami`) or DRF paginated dicts (`list_*`, `search_*`) on success. On a backend error, FastMCP server-side catches the exception and returns `CallToolResult(isError=true, content=[TextContent(text="Error executing tool …: <details>")])`. Empty result sets are `{count: 0, results: []}` — not an error.
+
+The instruction bans fabrication explicitly: *"Do NOT invent deals, calls, scorecards, or content."* Backstop for the model "plowing ahead" on errors is the reflect-retry plugin below.
+
+### Tool error recovery — reflect & retry plugin
+
+ADK 1.29 ships an experimental `ReflectAndRetryToolPlugin` that intercepts tool failures, returns structured reflection guidance to the LLM (error details, args used, retry count, "consider these five things before your next attempt"), and lets the model self-correct. It tracks consecutive failures per-tool with an `asyncio.Lock` and a per-invocation counter. We register it on the `Runner` in [app/chat/router.py](app/chat/router.py).
+
+The base plugin only sees **raised** exceptions through ADK's `on_tool_error_callback` path. That covers two of the three failure modes — hallucinated tool names (ADK's `_get_tool` raises `ValueError("Tool 'X' not found. Available tools: …")`), and transport / protocol-level failures from the MCP client. It misses the third: server-side tool errors come back as a *successful* `CallToolResult` with `isError: true`, because `MCPTool._run_async_impl` doesn't raise on those.
+
+[app/agent/reflect_retry.py](app/agent/reflect_retry.py) closes that gap with a subclass that overrides `extract_error_from_result` to detect:
+
+- `isError: true` on the MCP result dict — extracts the error text from `content[0].text`
+- `ok: false` on the attachment-tool result dict — extracts the `reason`
+
+Either match triggers the same reflection-and-retry path as a raised exception. `max_retries=2`, `throw_exception_if_retry_exceeded=False` so the stream never crashes — once the budget is exhausted, the plugin emits a "do not retry, try a different approach" message that the model is instructed to act on.
+
+| Failure | Wire shape | Plugin path |
+|---|---|---|
+| LLM hallucinates a tool name | `ValueError("Tool 'X' not found …")` raised in ADK | base plugin's `on_tool_error_callback` |
+| Flockjay backend 500 / 4xx | `{isError: true, content: [{text: "Error executing tool …"}]}` | overridden `extract_error_from_result` |
+| MCP protocol-level error / transport dead | `McpError` / `BrokenPipeError` / etc. raised | base plugin's `on_tool_error_callback` |
+| Attachment tool failure | `{ok: false, reason: "…"}` | overridden `extract_error_from_result` |
+| Empty result set (`count: 0`) | `{count: 0, results: []}` | not retried — model handles per system prompt |
+
+What this does **not** cover: re-establishing a dead `mcp-remote` session within the same turn. If the stdio child dies and ADK can't reconnect, every retry fails and the plugin emits the give-up message. Recovering that is a router-level concern (recreate the agent, recreate the toolset) — not yet wired.
 
 ### Stateful conversation
 
@@ -271,6 +300,7 @@ flockjay_agents/
 │   ├── agent/
 │   │   ├── instructions.py    # SYSTEM_INSTRUCTION
 │   │   ├── mcp_toolset.py     # build_flockjay_mcp_toolset()  (stdio + mcp-remote)
+│   │   ├── reflect_retry.py   # FlockjayReflectRetryPlugin (subclasses ADK's ReflectAndRetryToolPlugin)
 │   │   └── root_agent.py      # build_root_agent() -> LlmAgent  (LLM_MODEL constant)
 │   ├── attachments/
 │   │   ├── embedder.py        # Gemini batched async embeddings (L2-normalized)

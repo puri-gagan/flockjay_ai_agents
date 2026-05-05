@@ -14,6 +14,7 @@ from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.genai.types import Content, Part
 
+from app.agent.reflect_retry import build_plugin as build_reflect_retry_plugin
 from app.agent.root_agent import build_root_agent
 from app.attachments.ingest import AttachmentError, register_attachment
 from app.attachments.registry import registry
@@ -87,6 +88,7 @@ async def _stream_agent_reply(
         agent=agent,
         session_service=runtime.session_service,
         artifact_service=runtime.artifact_service,
+        plugins=[build_reflect_retry_plugin(max_retries=2)],
         auto_create_session=True,
     ) as runner:
         try:
