@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.chat.router import router as chat_router
+from app.chat.service import init_chat_service
 from app.runtime.runner import get_runtime, init_runtime
 from app.settings import settings
 
@@ -39,7 +40,8 @@ def _configure_logging() -> None:
 async def lifespan(app: FastAPI):
     _configure_logging()
     log = logging.getLogger("flockjay.main")
-    init_runtime()
+    runtime = init_runtime()
+    init_chat_service(runtime)
     log.info("Flockjay agent service starting on :%s", settings.port)
     try:
         yield

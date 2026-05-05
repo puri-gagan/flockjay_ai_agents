@@ -19,7 +19,7 @@ import tiktoken
 
 from app.attachments.embedder import Embedder
 from app.attachments.extractors import extract_text
-from app.attachments.registry import AttachmentRecord, registry
+from app.attachments.registry import AttachmentRecord, AttachmentRegistry
 from app.constants import (
     ATTACHMENT_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,
     ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS,
@@ -48,6 +48,7 @@ async def register_attachment(
     url: str,
     type_hint: str | None,
     embedder: Embedder,
+    registry: AttachmentRegistry,
 ) -> AttachmentRecord:
     """Download, extract, chunk, embed, and register an attachment.
 

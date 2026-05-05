@@ -172,7 +172,3 @@ class AttachmentRegistry:
             "This session has one or more attachments. Use list_active_attachments "
             "to see them, then search_attachment to drill in based on the user's question."
         )
-
-
-# Module-level singleton — wired up in app.runtime.runner
-registry = AttachmentRegistry()

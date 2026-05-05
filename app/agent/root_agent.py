@@ -14,10 +14,10 @@ import os
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
+from google.adk.tools import FunctionTool
 
 from app.agent.instructions import SYSTEM_INSTRUCTION
 from app.agent.mcp_toolset import build_flockjay_mcp_toolset
-from app.attachments.tools import build_attachment_tools
 from app.constants import LLM_MODEL
 from app.settings import settings
 
@@ -47,8 +47,19 @@ if settings.opik_api_key:
         log.warning("Opik tracer init failed (%s); continuing without tracing.", exc)
 
 
-def build_root_agent(session_note: str = "") -> LlmAgent:
+def build_root_agent(
+    *,
+    session_note: str = "",
+    attachment_tools: list[FunctionTool],
+) -> LlmAgent:
     """Build a fresh root agent.
+
+    Args:
+        session_note: appended to the system instruction when the session has
+            attachments. Empty string when none.
+        attachment_tools: pre-built attachment FunctionTools (constructor-injected
+            via ``app.attachments.tools.build_attachment_tools``). Live alongside
+            the Flockjay MCP toolset on the agent.
 
     Flockjay MCP auth is handled by ``mcp-remote`` (see
     :mod:`app.agent.mcp_toolset`); no per-request JWT is needed.
@@ -76,9 +87,6 @@ def build_root_agent(session_note: str = "") -> LlmAgent:
             "deals, calls, content, coaching, teammates, and attachments."
         ),
         instruction=instruction,
-        tools=[
-            build_flockjay_mcp_toolset(),
-            *build_attachment_tools(),
-        ],
+        tools=[build_flockjay_mcp_toolset(), *attachment_tools],
         **callbacks,
     )

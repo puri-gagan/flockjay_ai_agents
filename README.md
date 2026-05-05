@@ -7,7 +7,7 @@ Agentic chat backend for Flockjay AI Agents. One `POST /chat` endpoint, one root
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Framework**      | Google ADK 1.29.0 (`LlmAgent` + `Runner` + `MCPToolset`)                                                                                          |
 | **API**            | FastAPI + Uvicorn, single worker, plain-text streaming response                                                                                   |
-| **LLM**            | `LLM_MODEL` constant in `[app/agent/root_agent.py](app/agent/root_agent.py)`; Gemini routes natively, everything else via ADK's `LiteLlm` wrapper |
+| **LLM**            | `LLM_MODEL` constant in [app/constants.py](app/constants.py); Gemini routes natively, everything else via ADK's `LiteLlm` wrapper                |
 | **Attachment RAG** | Chroma in-memory + Gemini (`gemini-embedding-001`) or OpenAI (`text-embedding-3-*`), token-aware chunking via tiktoken                            |
 | **MCP OAuth**      | `npx mcp-remote` stdio child (handles discovery, DCR, browser flow, token cache, silent refresh)                                                  |
 | **Error recovery** | ADK `ReflectAndRetryToolPlugin` (subclassed) — converts MCP `isError:true`, raised tool exceptions, and hallucinated tool names into reflection guidance the model retries against |
@@ -73,7 +73,7 @@ curl -N -X POST http://localhost:8000/chat \
 | `GEMINI_API_KEY`    | conditional | Required when `LLM_MODEL` is `gemini-*` or `EMBEDDING_MODEL` is `gemini-*` (alias: `GOOGLE_API_KEY`)   |
 | `OPENAI_API_KEY`    | conditional | Required when `LLM_MODEL` starts with `openai/` or `EMBEDDING_MODEL` is `text-embedding-*`            |
 | `ANTHROPIC_API_KEY` | conditional | Required when `LLM_MODEL` starts with `anthropic/`                                                   |
-| `OPIK_API_KEY`      | optional    | Presence enables Opik tracing (see [Observability](#observability--opik))                            |
+| `OPIK_API_KEY`      | optional    | Presence enables Opik tracing (see [Observability — Opik](ARCHITECTURE.md#observability--opik))       |
 | `OPIK_WORKSPACE`    | optional    | Defaults to `default`                                                                                |
 | `OPIK_PROJECT_NAME` | optional    | Defaults to `flockjay-agents`                                                                        |
 
@@ -137,18 +137,36 @@ The body is streamed text. Attachment ingestion failures are emitted inline as `
 
 **Example with attachment**
 
+The repo ships `samples/ontic_guide_case-management-solution-evaluation-guide.pdf` — point the agent at it via the `/samples/` mount, no second web server needed:
+
 ```bash
 curl -N -X POST http://localhost:8000/chat \
   -H "x-api-key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "session_id": "demo-1",
-    "message": "Find past calls where I handled this same pricing objection.",
+    "session_id": "demo-101",
+    "message": "what my pdf talks about budget approval?",
     "attachments": [
-      {"id": "call-yesterday", "url": "http://localhost:8000/samples/transcript.json", "type": "transcript"}
+      {"id": "sample_file", "url": "http://localhost:8000/samples/ontic_guide_case-management-solution-evaluation-guide.pdf"}
     ]
   }'
 ```
+
+On first reference the PDF is ingested (PyMuPDF text extract → tiktoken chunk → batch-embed → register in the in-memory Chroma collection). The agent then calls `search_attachment(attachment_id="sample_file", query="budget approval")` to pull the relevant chunks and grounds its answer in them. Subsequent requests with the same `id` skip re-ingestion.
+
+**Follow-up request — no `attachments` field needed:**
+
+```bash
+curl -N -X POST http://localhost:8000/chat \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "demo-101",
+    "message": "does my pdf also talk about a framework for budget approval?"
+  }'
+```
+
+Reuse the same `session_id` and the agent still has access to `sample_file`. makes use of `list_active_attachments()` / `search_attachment()` tool without the user re-uploading anything in the same session.
 
 ---
 
@@ -165,22 +183,23 @@ flockjay_ai_agents/
 │   ├── attachments/
 │   │   ├── embedder.py        # Embedder protocol + Gemini / OpenAI implementations + factory
 │   │   ├── extractors.py      # PDF / transcript-JSON / subtitles / plain
-│   │   ├── ingest.py          # download -> extract -> chunk -> embed -> register
-│   │   ├── registry.py        # AttachmentRegistry + Chroma collection mgmt
-│   │   └── tools.py           # FunctionTool wrappers (search_attachment, list_active_attachments)
+│   │   ├── ingest.py          # register_attachment(...) — download → extract → chunk → embed
+│   │   ├── registry.py        # AttachmentRegistry (per-instance; held on Runtime)
+│   │   └── tools.py           # build_attachment_tools(embedder, registry) — closure factory
 │   ├── chat/
-│   │   ├── router.py          # POST /chat (streams plain text)
-│   │   └── schemas.py
+│   │   ├── router.py          # POST /chat — thin HTTP layer, Depends(get_chat_service)
+│   │   ├── schemas.py         # ChatRequest, Attachment
+│   │   └── service.py         # ChatService — orchestration: ingest → agent → App → Runner → stream
 │   ├── runtime/
-│   │   └── runner.py          # lifespan singletons
+│   │   └── runner.py          # Runtime dataclass + lifespan singletons (init_runtime, get_runtime)
 │   ├── auth.py                # x-api-key dependency
 │   ├── constants.py
-│   ├── main.py                # FastAPI app + /health + /samples static mount
+│   ├── main.py                # FastAPI app + lifespan + /health + /samples static mount
 │   └── settings.py            # pydantic-settings
 ├── samples/                   # served at /samples/<file> for local attachment testing
 ├── pyproject.toml
 ├── .env.example
-├── ARCHITECTURE.md            # this file
+├── ARCHITECTURE.md
 └── README.md
 ```
 

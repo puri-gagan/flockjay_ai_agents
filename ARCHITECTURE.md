@@ -6,8 +6,7 @@ Engineering-facing documentation. For setup and the API surface, see [README.md]
 
 1. [Architecture](#architecture)
 2. [Known limitations & improvements](#known-limitations--improvements)
-3. [MCP wishlist](#mcp-wishlist)
-4. [Project structure](#project-structure)
+3. [MCP improvements](#mcp-improvements)
 
 ---
 
@@ -50,7 +49,7 @@ For production we should move to a hosted VDB (Qdrant, pgvector, Pinecone, etc.)
 
 ### Tool error recovery — reflect & retry
 
-ADK has an `ReflectAndRetryToolPlugin` that intercepts tool failures, returns structured reflection guidance to the LLM (error details, args used, retry count, "consider these five things before your next attempt"), and lets the model self-correct. We've it register on the `Runner` in [app/chat/router.py](app/chat/router.py).
+ADK has an `ReflectAndRetryToolPlugin` that intercepts tool failures, returns structured reflection guidance to the LLM (error details, args used, retry count, "consider these five things before your next attempt"), and lets the model self-correct. The plugin is attached to the `App` (which is then driven by the `Runner`) inside [app/chat/service.py](app/chat/service.py) — `App(name=..., root_agent=..., plugins=[build_reflect_retry_plugin(...)], events_compaction_config=...)`.
 
 The base plugin only sees **raised** exceptions through ADK's `on_tool_error_callback` path. That covers two of the three failure modes — hallucinated tool names (ADK's `_get_tool` raises `ValueError("Tool 'X' not found. Available tools: …")`), and transport / protocol-level failures from the MCP client. 
 

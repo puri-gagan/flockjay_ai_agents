@@ -1,5 +1,9 @@
 """FunctionTool wrappers exposed to the root agent.
 
+Built via :func:`build_attachment_tools`, which closes over an `Embedder`
+and an `AttachmentRegistry` so the tools are constructor-injected — no
+module-level mutable state, no implicit coupling.
+
 Docstrings double as tool descriptions: ADK feeds them to the LLM as the
 tool's natural-language description, so they need to be precise about
 when to call (and not call) each tool.
@@ -14,109 +18,105 @@ from google.adk.tools import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 
 from app.attachments.embedder import Embedder
-from app.attachments.registry import registry
+from app.attachments.registry import AttachmentRegistry
 from app.constants import MIN_SIMILARITY, TOP_K
 
 log = logging.getLogger(__name__)
 
-# Populated from app.runtime.runner at startup.
-_embedder: Embedder | None = None
 
+def build_attachment_tools(
+    *,
+    embedder: Embedder,
+    registry: AttachmentRegistry,
+) -> list[FunctionTool]:
+    """Return the attachment FunctionTools bound to the supplied dependencies.
 
-def set_embedder(embedder: Embedder) -> None:
-    """Wire the shared embedder into this module (called once from lifespan)."""
-    global _embedder
-    _embedder = embedder
-
-
-async def search_attachment(
-    attachment_id: str, query: str, tool_context: ToolContext
-) -> dict[str, Any]:
-    """Semantically search inside a specific attachment registered for this session.
-
-    Use this tool when:
-      - The user's question references an attached transcript/document
-        (e.g. "what did the prospect say about pricing in my call?")
-      - You need a concrete quote or excerpt to cite
-      - You want to use the attachment as a retrieval anchor before querying
-        other MCP tools (e.g. extract the objection phrasing, then pass it
-        to search_content to find playbook guidance)
-
-    Do NOT use this tool for general library content — use search_content
-    (MCP) for that.
-
-    Args:
-        attachment_id: the id from list_active_attachments or the session note.
-        query: a focused search phrase (objection text, topic, stakeholder,
-            question). Prefer specific phrases over broad topics.
-
-    Returns a dict with `ok`, `hits` (list of {text, score, chunk_idx}) or
-    a `reason` string on failure.
+    Constructed once at lifespan time and passed into the root agent.
     """
-    if _embedder is None:
-        return {"ok": False, "reason": "embedder not initialized"}
 
-    session_id = tool_context.session.id
-    if not session_id:
-        return {"ok": False, "reason": "no active session"}
+    async def search_attachment(
+        attachment_id: str, query: str, tool_context: ToolContext
+    ) -> dict[str, Any]:
+        """Semantically search inside a specific attachment registered for this session.
 
-    record = registry.get(session_id, attachment_id)
-    if record is None:
-        return _missing_attachment_error(session_id, attachment_id)
+        Use this tool when:
+          - The user's question references an attached transcript/document
+            (e.g. "what did the prospect say about pricing in my call?")
+          - You need a concrete quote or excerpt to cite
+          - You want to use the attachment as a retrieval anchor before querying
+            other MCP tools (e.g. extract the objection phrasing, then pass it
+            to search_content to find playbook guidance)
 
-    try:
-        [query_embedding] = await _embedder.embed([query])
-    except Exception as exc:
-        log.exception("Embedding query failed")
-        return {"ok": False, "reason": f"embedding call failed: {exc}"}
+        Do NOT use this tool for general library content — use search_content
+        (MCP) for that.
 
-    hits = registry.query(session_id, attachment_id, query_embedding, TOP_K)
-    filtered = [
-        {"text": text, "score": round(score, 3), "chunk_idx": idx}
-        for (text, score, idx) in hits
-        if score >= MIN_SIMILARITY
-    ]
-    if not filtered:
-        return {
-            "ok": False,
-            "reason": "no chunks scored above similarity threshold",
-            "best_score": round(hits[0][1], 3) if hits else 0.0,
-        }
-    return {"ok": True, "hits": filtered, "attachment_id": attachment_id}
+        Args:
+            attachment_id: the id from list_active_attachments or the session note.
+            query: a focused search phrase (objection text, topic, stakeholder,
+                question). Prefer specific phrases over broad topics.
 
+        Returns a dict with `ok`, `hits` (list of {text, score, chunk_idx}) or
+        a `reason` string on failure.
+        """
+        session_id = tool_context.session.id
+        if not session_id:
+            return {"ok": False, "reason": "no active session"}
 
-def list_active_attachments(tool_context: ToolContext) -> dict[str, Any]:
-    """List the attachments registered for the current session.
+        record = registry.get(session_id, attachment_id)
+        if record is None:
+            return _missing_attachment_error(registry, session_id, attachment_id)
 
-    Use this when the user refers to "the call", "the transcript", or "this
-    document" without naming an attachment_id.
-    """
-    session_id = tool_context.session.id
-    records = registry.list_for_session(session_id)
-    return {
-        "ok": True,
-        "count": len(records),
-        "attachments": [
-            {
-                "attachment_id": r.attachment_id,
-                "content_type": r.content_type,
-                "chunk_count": r.chunk_count,
-                "source_url": r.source_url,
+        try:
+            [query_embedding] = await embedder.embed([query])
+        except Exception as exc:
+            log.exception("Embedding query failed")
+            return {"ok": False, "reason": f"embedding call failed: {exc}"}
+
+        hits = registry.query(session_id, attachment_id, query_embedding, TOP_K)
+        filtered = [
+            {"text": text, "score": round(score, 3), "chunk_idx": idx}
+            for (text, score, idx) in hits
+            if score >= MIN_SIMILARITY
+        ]
+        if not filtered:
+            return {
+                "ok": False,
+                "reason": "no chunks scored above similarity threshold",
+                "best_score": round(hits[0][1], 3) if hits else 0.0,
             }
-            for r in records
-        ],
-    }
+        return {"ok": True, "hits": filtered, "attachment_id": attachment_id}
 
+    def list_active_attachments(tool_context: ToolContext) -> dict[str, Any]:
+        """List the attachments registered for the current session.
 
-def build_attachment_tools() -> list[FunctionTool]:
-    """Return the list of FunctionTools for the root agent."""
+        Use this when the user refers to "the call", "the transcript", or "this
+        document" without naming an attachment_id.
+        """
+        session_id = tool_context.session.id
+        records = registry.list_for_session(session_id)
+        return {
+            "ok": True,
+            "count": len(records),
+            "attachments": [
+                {
+                    "attachment_id": r.attachment_id,
+                    "content_type": r.content_type,
+                    "chunk_count": r.chunk_count,
+                    "source_url": r.source_url,
+                }
+                for r in records
+            ],
+        }
+
     return [
         FunctionTool(search_attachment),
         FunctionTool(list_active_attachments),
     ]
 
 
-def _missing_attachment_error(session_id: str, attachment_id: str) -> dict[str, Any]:
+def _missing_attachment_error(
+    registry: AttachmentRegistry, session_id: str, attachment_id: str
+) -> dict[str, Any]:
     """Build the `ok=false` response for an attachment id the session doesn't have."""
     available = [r.attachment_id for r in registry.list_for_session(session_id)]
     return {

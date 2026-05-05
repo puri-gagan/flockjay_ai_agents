@@ -16,9 +16,11 @@ from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
 from google.adk.artifacts import InMemoryArtifactService
 from google.adk.models.google_llm import Gemini
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools import FunctionTool
 
 from app.attachments.embedder import Embedder, build_embedder
-from app.attachments.tools import set_embedder
+from app.attachments.registry import AttachmentRegistry
+from app.attachments.tools import build_attachment_tools
 from app.constants import (
     COMPACTION_EVENT_RETENTION_SIZE,
     COMPACTION_INTERVAL,
@@ -39,6 +41,8 @@ class Runtime:
     session_service: InMemorySessionService
     artifact_service: InMemoryArtifactService
     embedder: Embedder
+    attachment_registry: AttachmentRegistry
+    attachment_tools: list[FunctionTool]
     compaction_config: EventsCompactionConfig
 
     async def aclose(self) -> None:
@@ -59,6 +63,10 @@ def init_runtime() -> Runtime:
     _normalize_provider_env()
 
     embedder = build_embedder(EMBEDDING_MODEL, EMBEDDING_OUTPUT_DIM)
+    attachment_registry = AttachmentRegistry()
+    attachment_tools = build_attachment_tools(
+        embedder=embedder, registry=attachment_registry
+    )
 
     compaction_config = EventsCompactionConfig(
         compaction_interval=COMPACTION_INTERVAL,
@@ -72,10 +80,10 @@ def init_runtime() -> Runtime:
         session_service=InMemorySessionService(),
         artifact_service=InMemoryArtifactService(),
         embedder=embedder,
+        attachment_registry=attachment_registry,
+        attachment_tools=attachment_tools,
         compaction_config=compaction_config,
     )
-
-    set_embedder(embedder)
 
     log.info(
         "Runtime initialized (llm=%s, embedding=%s, dim=%d, "
