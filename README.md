@@ -8,7 +8,7 @@ Agentic chat backend for Flockjay AI Agents. One `POST /chat` endpoint, one root
 | **Framework**      | Google ADK 1.29.0 (`LlmAgent` + `Runner` + `MCPToolset`)                                                                                          |
 | **API**            | FastAPI + Uvicorn, single worker, plain-text streaming response                                                                                   |
 | **LLM**            | `LLM_MODEL` constant in `[app/agent/root_agent.py](app/agent/root_agent.py)`; Gemini routes natively, everything else via ADK's `LiteLlm` wrapper |
-| **Attachment RAG** | Chroma in-memory + Gemini `gemini-embedding-001`, token-aware chunking via tiktoken                                                               |
+| **Attachment RAG** | Chroma in-memory + Gemini (`gemini-embedding-001`) or OpenAI (`text-embedding-3-*`), token-aware chunking via tiktoken                            |
 | **MCP OAuth**      | `npx mcp-remote` stdio child (handles discovery, DCR, browser flow, token cache, silent refresh)                                                  |
 | **Error recovery** | ADK `ReflectAndRetryToolPlugin` (subclassed) — converts MCP `isError:true`, raised tool exceptions, and hallucinated tool names into reflection guidance the model retries against |
 | **Packaging**      | Poetry, Python 3.12                                                                                                                               |
@@ -72,25 +72,33 @@ curl -N -X POST http://localhost:8000/chat \
 | Var                 | Required    | Purpose                                                                                              |
 | ------------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
 | `API_KEY`           | yes         | Shared secret; constant-time compared against the `x-api-key` header on `/chat`                      |
-| `GEMINI_API_KEY`    | yes         | Always required — drives the Gemini attachment embedder; also the agent when `LLM_MODEL` is `gemini-*` (alias: `GOOGLE_API_KEY`) |
-| `OPENAI_API_KEY`    | conditional | Required when `LLM_MODEL` starts with `openai/`                                                      |
+| `GEMINI_API_KEY`    | conditional | Required when `LLM_MODEL` is `gemini-*` or `EMBEDDING_MODEL` is `gemini-*` (alias: `GOOGLE_API_KEY`)   |
+| `OPENAI_API_KEY`    | conditional | Required when `LLM_MODEL` starts with `openai/` or `EMBEDDING_MODEL` is `text-embedding-*`            |
 | `ANTHROPIC_API_KEY` | conditional | Required when `LLM_MODEL` starts with `anthropic/`                                                   |
 | `OPIK_API_KEY`      | optional    | Presence enables Opik tracing (see [Observability](#observability--opik))                            |
 | `OPIK_WORKSPACE`    | optional    | Defaults to `default`                                                                                |
 | `OPIK_PROJECT_NAME` | optional    | Defaults to `flockjay-agents`                                                                        |
 
 
-### Switching LLM providers
+### Switching providers
 
-The model is a hard-coded constant in [app/constants.py](app/constants.py):
+Both the agent LLM and the attachment embedder are configured via constants in [app/constants.py](app/constants.py); the provider is inferred from the model string.
 
 ```python
+# Agent LLM
 LLM_MODEL: str = "gemini-3-flash-preview"
-# LLM_MODEL = "anthropic/claude-sonnet-4-5"   # needs ANTHROPIC_API_KEY
-# LLM_MODEL = "openai/gpt-4o"                  # needs OPENAI_API_KEY
+# LLM_MODEL = "anthropic/claude-sonnet-4-5"        # needs ANTHROPIC_API_KEY
+# LLM_MODEL = "openai/gpt-4o"                       # needs OPENAI_API_KEY
+
+# Attachment embedder
+EMBEDDING_MODEL: str = "gemini-embedding-001"
+# EMBEDDING_MODEL = "text-embedding-3-small"        # needs OPENAI_API_KEY
+# EMBEDDING_MODEL = "text-embedding-3-large"        # needs OPENAI_API_KEY
 ```
 
-[app/agent/root_agent.py](app/agent/root_agent.py) routes `gemini-*` through ADK's native path and everything else through ADK's `LiteLlm` wrapper. `GEMINI_API_KEY` is always required regardless of `LLM_MODEL` — the attachment embedder is Gemini-only.
+[app/agent/root_agent.py](app/agent/root_agent.py) routes `gemini-*` through ADK's native path and everything else through ADK's `LiteLlm` wrapper. [app/attachments/embedder.py](app/attachments/embedder.py) routes `gemini-*` through `GeminiEmbedder` and `text-embedding-*` through `OpenAIEmbedder`. Both implementations satisfy the same `Embedder` protocol — the rest of the pipeline doesn't care which one is in use.
+
+The output dimension (`EMBEDDING_OUTPUT_DIM = 768`) is honored by both providers and must be held constant for a given Chroma collection's lifetime.
 
 ---
 
@@ -296,7 +304,7 @@ flockjay_ai_agents/
 │   │   ├── reflect_retry.py   # FlockjayReflectRetryPlugin (subclasses ADK's ReflectAndRetryToolPlugin)
 │   │   └── root_agent.py      # build_root_agent() -> LlmAgent  (LLM_MODEL constant)
 │   ├── attachments/
-│   │   ├── embedder.py        # Gemini batched async embeddings (L2-normalized)
+│   │   ├── embedder.py        # Embedder protocol + Gemini / OpenAI implementations + factory
 │   │   ├── extractors.py      # PDF / transcript-JSON / subtitles / plain
 │   │   ├── ingest.py          # download -> extract -> chunk -> embed -> register
 │   │   ├── registry.py        # AttachmentRegistry + Chroma collection mgmt

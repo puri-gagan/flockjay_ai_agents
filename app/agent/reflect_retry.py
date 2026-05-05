@@ -1,22 +1,18 @@
-"""Tool error → reflection / retry plugin for the Flockjay agent.
+"""Tool error → reflection / retry plugin for the Flockjay agent without crashing.
 
 Wraps ADK's experimental ``ReflectAndRetryToolPlugin`` and teaches it the
-two failure shapes the Flockjay agent actually sees on the wire:
+two failure shapes the agent actually sees on the wire:
 
 1. **MCP tool errors.** ``MCPTool._run_async_impl`` does not raise on
-   tool-side failures — it returns the ``CallToolResult`` dump, which on
-   error is ``{"isError": true, "content": [{"type": "text",
-   "text": "Error executing tool: ..."}]}``. Without this override the
-   base plugin never sees the error and the LLM has to infer it from the
-   text alone.
+   tool-side failures
 
 2. **Attachment tool failures.** ``app.attachments.tools`` returns
    ``{"ok": false, "reason": "..."}`` on failure — same problem.
 
-LLM-hallucinated tool names and exceptions raised by either tool family
-already flow through the base plugin's ``on_tool_error_callback`` path
+LLM-hallucinated tool names and exceptions raised by either tool
+flow through the base plugin's ``on_tool_error_callback`` path
 (ADK's ``_get_tool`` raises ``ValueError`` with the available-tools list
-embedded in the message), so no override is needed for those.
+embedded in the message).
 """
 
 from __future__ import annotations

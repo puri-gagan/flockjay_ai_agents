@@ -10,16 +10,16 @@ USER_AGENT: str = "flockjay-agents/0.1.0"
 # (JWT/JWKS) lands, derive the user id from the verified token instead.
 DEFAULT_USER_ID: str = "default"
 
-
 # Models
 # Root-agent LLM. Change to switch providers — `gemini-*` routes through
 # ADK's native path, anything else through ADK's LiteLlm wrapper.
 LLM_MODEL: str = "gemini-3-flash-preview"
 
-# Gemini embedding model used by the attachment subsystem.
+# Embedding model for the attachment subsystem. Gemini and OpenAI are both
+# supported — provider is inferred from the model string by build_embedder()
+# Switching providers requires the matching API key to be configured.
 EMBEDDING_MODEL: str = "gemini-embedding-001"
-EMBEDDING_OUTPUT_DIM: int = 768
-EMBEDDING_BATCH_SIZE: int = 96  # gemini-embedding-001 accepts up to 100 inputs per request
+EMBEDDING_OUTPUT_DIM: int = 768  # supported by both gemini-embedding-001 and text-embedding-3-*
 
 # Attachment ingestion
 ATTACHMENT_MAX_BYTES: int = 50 * 1024 * 1024  # 50 MB hard cap per attachment

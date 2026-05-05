@@ -13,17 +13,17 @@ from typing import Any
 from google.adk.tools import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 
-from app.attachments.embedder import GeminiEmbedder
+from app.attachments.embedder import Embedder
 from app.attachments.registry import registry
 from app.constants import MIN_SIMILARITY, TOP_K
 
 log = logging.getLogger(__name__)
 
 # Populated from app.runtime.runner at startup.
-_embedder: GeminiEmbedder | None = None
+_embedder: Embedder | None = None
 
 
-def set_embedder(embedder: GeminiEmbedder) -> None:
+def set_embedder(embedder: Embedder) -> None:
     """Wire the shared embedder into this module (called once from lifespan)."""
     global _embedder
     _embedder = embedder

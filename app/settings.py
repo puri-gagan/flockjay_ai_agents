@@ -16,14 +16,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # API keys
-    # GOOGLE_API_KEY (or GEMINI_API_KEY) is required: it's used both by the
-    # Gemini embedder and by ADK whenever LLM_MODEL points at a Gemini model.
-    google_api_key: str = Field(
-        ...,
+    # API keys — each provider's key is optional at the schema level. The
+    # embedder factory and ADK's LLM resolver instantiate clients lazily;
+    # missing keys surface as a clear SDK error at startup. Whichever
+    # provider(s) your configured LLM_MODEL and EMBEDDING_MODEL target must
+    # have its corresponding key present.
+    google_api_key: str | None = Field(
+        default=None,
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     )
-    # Provider keys for non-Gemini LLM_MODEL choices. LiteLLM reads these env vars directly when invoked.
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
 

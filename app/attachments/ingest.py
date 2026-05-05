@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 import tiktoken
 
-from app.attachments.embedder import GeminiEmbedder
+from app.attachments.embedder import Embedder
 from app.attachments.extractors import extract_text
 from app.attachments.registry import AttachmentRecord, registry
 from app.constants import (
@@ -47,7 +47,7 @@ async def register_attachment(
     attachment_id: str,
     url: str,
     type_hint: str | None,
-    embedder: GeminiEmbedder,
+    embedder: Embedder,
 ) -> AttachmentRecord:
     """Download, extract, chunk, embed, and register an attachment.
 
