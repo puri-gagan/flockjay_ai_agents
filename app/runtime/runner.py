@@ -15,9 +15,8 @@ from google.adk.artifacts import InMemoryArtifactService
 from google.adk.sessions import InMemorySessionService
 
 from app.attachments.embedder import GeminiEmbedder
-from app.attachments.summarizer import Summarizer
 from app.attachments.tools import set_embedder
-from app.constants import EMBEDDING_MODEL, LLM_MODEL, SUMMARIZER_MODEL
+from app.constants import EMBEDDING_MODEL, LLM_MODEL
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -29,7 +28,6 @@ class Runtime:
     artifact_service: InMemoryArtifactService
     genai_client: genai.Client
     embedder: GeminiEmbedder
-    summarizer: Summarizer
 
     async def aclose(self) -> None:
         # google-genai manages its own httpx pools internally; no explicit
@@ -51,24 +49,17 @@ def init_runtime() -> Runtime:
     # genai.Client picks up GOOGLE_API_KEY (or GEMINI_API_KEY) from env.
     genai_client = genai.Client()
     embedder = GeminiEmbedder(client=genai_client, model=EMBEDDING_MODEL)
-    summarizer = Summarizer(model=SUMMARIZER_MODEL)
 
     _runtime = Runtime(
         session_service=InMemorySessionService(),
         artifact_service=InMemoryArtifactService(),
         genai_client=genai_client,
         embedder=embedder,
-        summarizer=summarizer,
     )
 
     set_embedder(embedder)
 
-    log.info(
-        "Runtime initialized (model=%s, summarizer=%s, embedding=%s)",
-        LLM_MODEL,
-        SUMMARIZER_MODEL,
-        EMBEDDING_MODEL,
-    )
+    log.info("Runtime initialized (model=%s, embedding=%s)", LLM_MODEL, EMBEDDING_MODEL)
     return _runtime
 
 

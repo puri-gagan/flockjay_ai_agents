@@ -37,15 +37,13 @@ async def search_attachment(
     Use this tool when:
       - The user's question references an attached transcript/document
         (e.g. "what did the prospect say about pricing in my call?")
-      - You need a concrete quote or excerpt to cite, not just a summary
+      - You need a concrete quote or excerpt to cite
       - You want to use the attachment as a retrieval anchor before querying
         other MCP tools (e.g. extract the objection phrasing, then pass it
         to search_content to find playbook guidance)
 
-    Do NOT use this tool for:
-      - General library content — use search_content (MCP) for that
-      - Questions where the attachment summary already has the answer —
-        prefer get_attachment_summary, which is much cheaper
+    Do NOT use this tool for general library content — use search_content
+    (MCP) for that.
 
     Args:
         attachment_id: the id from list_active_attachments or the session note.
@@ -87,33 +85,6 @@ async def search_attachment(
     return {"ok": True, "hits": filtered, "attachment_id": attachment_id}
 
 
-def get_attachment_summary(attachment_id: str, tool_context: ToolContext) -> dict[str, Any]:
-    """Return a plain-text summary of an attachment.
-
-    Use this BEFORE search_attachment when the user's question is broad
-    (themes, stakeholders, high-level outcomes). The summary covers the whole
-    attachment in a few sentences — often enough on its own.
-
-    Args:
-        attachment_id: the id from list_active_attachments or the session note.
-
-    Returns: summary (plain text), chunk_count, length_chars, source_url, content_type.
-    """
-    session_id = tool_context.session.id
-    record = registry.get(session_id, attachment_id)
-    if record is None:
-        return _missing_attachment_error(session_id, attachment_id)
-    return {
-        "ok": True,
-        "attachment_id": record.attachment_id,
-        "content_type": record.content_type,
-        "source_url": record.source_url,
-        "chunk_count": record.chunk_count,
-        "length_chars": record.length_chars,
-        "summary": record.summary,
-    }
-
-
 def list_active_attachments(tool_context: ToolContext) -> dict[str, Any]:
     """List the attachments registered for the current session.
 
@@ -141,7 +112,6 @@ def build_attachment_tools() -> list[FunctionTool]:
     """Return the list of FunctionTools for the root agent."""
     return [
         FunctionTool(search_attachment),
-        FunctionTool(get_attachment_summary),
         FunctionTool(list_active_attachments),
     ]
 

@@ -2,7 +2,6 @@
 
 Holds, per session:
   - A Chroma collection of chunk embeddings for each attachment
-  - The summary card produced at ingest time
   - Minimal metadata (content_type, source URL, chunk count)
 
 The registry is process-local — a deliberate constraint of the
@@ -31,7 +30,6 @@ class AttachmentRecord:
     session_id: str
     source_url: str
     content_type: str
-    summary: str
     chunk_count: int
     length_chars: int
     registered_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -82,7 +80,6 @@ class AttachmentRegistry:
         content_type: str,
         chunks: list[str],
         embeddings: list[list[float]],
-        summary: str,
     ) -> AttachmentRecord:
         if len(chunks) != len(embeddings):
             raise ValueError("chunks and embeddings must have the same length")
@@ -107,7 +104,6 @@ class AttachmentRegistry:
                 session_id=session_id,
                 source_url=source_url,
                 content_type=content_type,
-                summary=summary,
                 chunk_count=len(chunks),
                 length_chars=sum(len(c) for c in chunks),
                 collection_name=name,
@@ -174,8 +170,7 @@ class AttachmentRegistry:
             return ""
         return (
             "This session has one or more attachments. Use list_active_attachments "
-            "to see them, then get_attachment_summary or search_attachment to "
-            "drill in based on the user's question."
+            "to see them, then search_attachment to drill in based on the user's question."
         )
 
 

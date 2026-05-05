@@ -20,17 +20,12 @@ USER_AGENT: str = "flockjay-agents/0.1.0"
 # Fallback when ChatRequest.user_id is omitted. Once a real auth layer
 # (JWT/JWKS) lands, derive the user id from the verified token instead.
 DEFAULT_USER_ID: str = "default"
-# Internal user id used by the one-shot attachment summarizer Runner.
-SUMMARIZER_USER_ID: str = "summarizer"
 
 
 # Models
 # Root-agent LLM. Change to switch providers — `gemini-*` routes through
 # ADK's native path, anything else through ADK's LiteLlm wrapper.
 LLM_MODEL: str = "gemini-3-flash-preview"
-
-# Lighter / cheaper Gemini model for one-shot attachment summarization.
-SUMMARIZER_MODEL: str = "gemini-2.5-flash"
 
 # Gemini embedding model used by the attachment subsystem.
 EMBEDDING_MODEL: str = "gemini-embedding-001"

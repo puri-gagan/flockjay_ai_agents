@@ -139,7 +139,6 @@ async def _ingest_new_attachments(
                 url=att.url,
                 type_hint=att.type,
                 embedder=runtime.embedder,
-                summarizer=runtime.summarizer,
             )
             return None
         except AttachmentError as exc:

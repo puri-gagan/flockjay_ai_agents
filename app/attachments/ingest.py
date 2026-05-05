@@ -1,8 +1,8 @@
 """Attachment ingestion pipeline.
 
 Given a (session_id, attachment_spec), download the content to a temp file,
-extract plain text, chunk it with tiktoken, embed via Gemini, summarize via
-Gemini, and register all of it in the module-level AttachmentRegistry.
+extract plain text, chunk it with tiktoken, embed via Gemini, and register
+the result in the module-level AttachmentRegistry.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ import tiktoken
 from app.attachments.embedder import GeminiEmbedder
 from app.attachments.extractors import extract_text
 from app.attachments.registry import AttachmentRecord, registry
-from app.attachments.summarizer import Summarizer
 from app.constants import (
     ATTACHMENT_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,
     ATTACHMENT_DOWNLOAD_TIMEOUT_SECONDS,
@@ -49,9 +48,8 @@ async def register_attachment(
     url: str,
     type_hint: str | None,
     embedder: GeminiEmbedder,
-    summarizer: Summarizer,
 ) -> AttachmentRecord:
-    """Download, extract, chunk, embed, summarize, and register an attachment.
+    """Download, extract, chunk, embed, and register an attachment.
 
     Idempotent: re-registering the same (session_id, attachment_id) returns
     the existing record without re-doing the work.
@@ -81,21 +79,7 @@ async def register_attachment(
         "attachment %s: extracted %d chars -> %d chunks", attachment_id, len(text), len(chunks)
     )
 
-    # Embed + summarize in parallel. Embedder failure aborts (no embeddings = no
-    # semantic search), but summarizer failure is non-fatal — the attachment is
-    # still useful via search_attachment, just without a summary card.
-    embeddings_task = asyncio.create_task(embedder.embed(chunks))
-    summary_task = asyncio.create_task(summarizer.summarize(text))
-
-    embeddings = await embeddings_task
-    try:
-        summary = await summary_task
-    except Exception as exc:
-        log.warning(
-            "attachment %s: summarizer failed (%s: %s); proceeding without summary",
-            attachment_id, exc.__class__.__name__, exc,
-        )
-        summary = ""
+    embeddings = await embedder.embed(chunks)
 
     record = registry.register(
         session_id=session_id,
@@ -104,7 +88,6 @@ async def register_attachment(
         content_type=(type_hint or _infer_type(content_type, Path(url).suffix)),
         chunks=chunks,
         embeddings=embeddings,
-        summary=summary,
     )
     log.info(
         "attachment %s: ingested OK (content_type=%s chunks=%d)",

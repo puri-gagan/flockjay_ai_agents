@@ -164,9 +164,8 @@ A fresh toolset is built per `/chat` call and closed by `Runner.__aexit__`. The 
 Stuffing raw attachments into the LLM prompt would blow the context window and bury signal in noise. Two things happen instead:
 
 1. **Pre-ingest at `/chat` time, outside the LLM loop.** Download → extract text (PDF via PyMuPDF, JSON transcripts by concatenating turns, subtitles by stripping cues) → token-aware chunk via tiktoken (`CHUNK_SIZE=800`, `CHUNK_OVERLAP=100`) → batch embed via Gemini (`gemini-embedding-001`, L2-normalized) → register in an in-memory Chroma collection named `att_<sha256[:40]>`.
-2. **Three agent tools wrap it:**
+2. **Two agent tools wrap it:**
    - `search_attachment(attachment_id, query)` — top-k chunks for a specific query, with a similarity floor (`MIN_SIMILARITY=0.25`, `TOP_K=5`) so irrelevant attachments return `{ok: false, reason: "no chunks scored above similarity threshold"}` instead of noise.
-   - `get_attachment_summary(attachment_id)` — returns the cached one-shot summary; preferred over `search_attachment` for broad questions about themes/stakeholders/outcomes.
    - `list_active_attachments()` — useful when the user refers to "the call" without naming an id.
 
 The agent picks between targeted semantic search and enumeration; the instruction makes the tradeoff explicit. A short session note ("this session has attachments — use the attachment tools…") is appended to the agent's instruction whenever the registry has records for the session, so the model knows attachments exist without having to be told in the user message.
@@ -289,7 +288,7 @@ Observed by inspecting actual tool responses against the underlying Flockjay RES
 ## Project structure
 
 ```
-flockjay_agents/
+flockjay_ai_agents/
 ├── app/
 │   ├── agent/
 │   │   ├── instructions.py    # SYSTEM_INSTRUCTION
