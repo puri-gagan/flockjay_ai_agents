@@ -1,15 +1,4 @@
 """Hard-coded application constants.
-
-Anything that's a code-level decision — model identifiers, algorithm
-parameters, size/time limits, internal identifiers — lives here.
-
-Anything that legitimately varies per deployment — secrets, hosts, port,
-log level, feature toggles — lives in :mod:`app.settings` and is loaded
-from ``.env``.
-
-If you're tempted to add an env override for one of these constants,
-ask first whether the value really needs to differ between dev / staging
-/ prod. Most don't.
 """
 
 from __future__ import annotations
