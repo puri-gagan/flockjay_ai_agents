@@ -1,12 +1,14 @@
-"""In-memory attachment registry. TODO: This needs to be done using persistance VDB
+"""In-memory attachment registry.
 
 Holds, per session:
   - A Chroma collection of chunk embeddings for each attachment
   - The summary card produced at ingest time
-  - Minimal metadata (type, source URL, chunk count)
+  - Minimal metadata (content_type, source URL, chunk count)
 
-NOTE: The registry is process-local. This is constraint of running
-the service single-worker
+The registry is process-local — a deliberate constraint of the
+single-worker FastAPI deployment. To horizontally scale, replace the
+Chroma `EphemeralClient` with a persistent vector store (Qdrant,
+pgvector) and persist `_records` to a shared backing store.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import hashlib
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import chromadb
 from chromadb.api.types import EmbeddingFunction
@@ -28,11 +30,11 @@ class AttachmentRecord:
     attachment_id: str
     session_id: str
     source_url: str
-    type: str
+    content_type: str
     summary: str
     chunk_count: int
     length_chars: int
-    registered_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    registered_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     collection_name: str = ""
 
 
@@ -63,7 +65,6 @@ class AttachmentRegistry:
         self._ef = _NoopEmbeddingFunction()
         self._lock = threading.Lock()
 
-    # naming
     @staticmethod
     def _collection_name(session_id: str, attachment_id: str) -> str:
         digest = hashlib.sha256(f"{session_id}:{attachment_id}".encode()).hexdigest()[:40]
@@ -78,7 +79,7 @@ class AttachmentRegistry:
         session_id: str,
         attachment_id: str,
         source_url: str,
-        type: str,
+        content_type: str,
         chunks: list[str],
         embeddings: list[list[float]],
         summary: str,
@@ -95,14 +96,17 @@ class AttachmentRegistry:
                     ids=[f"{attachment_id}:{i}" for i in range(len(chunks))],
                     documents=chunks,
                     embeddings=embeddings,
-                    metadatas=[{"chunk_idx": i, "attachment_id": attachment_id} for i in range(len(chunks))],
+                    metadatas=[
+                        {"chunk_idx": i, "attachment_id": attachment_id}
+                        for i in range(len(chunks))
+                    ],
                 )
 
             record = AttachmentRecord(
                 attachment_id=attachment_id,
                 session_id=session_id,
                 source_url=source_url,
-                type=type,
+                content_type=content_type,
                 summary=summary,
                 chunk_count=len(chunks),
                 length_chars=sum(len(c) for c in chunks),
@@ -110,7 +114,8 @@ class AttachmentRegistry:
             )
             self._records.setdefault(session_id, {})[attachment_id] = record
         log.info(
-            "Registered attachment session=%s id=%s chunks=%d", session_id, attachment_id, len(chunks)
+            "Registered attachment session=%s id=%s chunks=%d",
+            session_id, attachment_id, len(chunks),
         )
         return record
 
@@ -152,22 +157,26 @@ class AttachmentRegistry:
         dists = (res.get("distances") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]
         out: list[tuple[str, float, int]] = []
-        for doc, dist, meta in zip(docs, dists, metas):
+        for doc, dist, meta in zip(docs, dists, metas, strict=False):
             score = max(0.0, min(1.0, 1.0 - (dist or 0.0) / 2.0))
             idx = int((meta or {}).get("chunk_idx", -1))
             out.append((doc, score, idx))
         return out
 
     def build_session_note(self, session_id: str) -> str:
-        """Short plain-text note injected into the system instruction when attachment is available in the session.
-        """
-        records = self.list_for_session(session_id)
-        if not records:
-            return ""
+        """Short note appended to the system instruction when the session has attachments.
 
-        lines = "This Session has attachments use appropriate attachment tools to list and get attachment to drill in based on the user message"
-        
-        return lines
+        The note exists so the model knows attachments are available without
+        the user having to mention them in every turn. The full attachment
+        catalog (ids, types) is fetched on demand via ``list_active_attachments``.
+        """
+        if not self.list_for_session(session_id):
+            return ""
+        return (
+            "This session has one or more attachments. Use list_active_attachments "
+            "to see them, then get_attachment_summary or search_attachment to "
+            "drill in based on the user's question."
+        )
 
 
 # Module-level singleton — wired up in app.runtime.runner

@@ -1,6 +1,6 @@
 """Extract plain text from attachment bytes.
 
-PDFs go through PyMuPDF to extract the selectable text, 
+PDFs go through PyMuPDF to extract the selectable text,
 need to ocr or direct pass to llm with artifact handling and adk artifact service loader (intent based loading) for scanned pdfs
 everything else is read as UTF-8 text.
 """
@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 
 def extract_text(path: Path, content_type: str | None, hint: str | None = None) -> str:
-    """Return the file's text content as-is."""
+    """Return the file's text content as plain text."""
     ct = (content_type or "").lower().split(";", 1)[0].strip()
     ext = path.suffix.lower()
     hint = (hint or "").lower()

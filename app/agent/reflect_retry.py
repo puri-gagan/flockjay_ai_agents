@@ -21,7 +21,7 @@ embedded in the message), so no override is needed for those.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from google.adk.plugins.reflect_retry_tool_plugin import (
     ReflectAndRetryToolPlugin,
@@ -31,7 +31,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
 
-def _extract_mcp_error_text(result: dict[str, Any]) -> Optional[str]:
+def _extract_mcp_error_text(result: dict[str, Any]) -> str | None:
     """Return the error text from an MCP CallToolResult dump, or None."""
     if not result.get("isError"):
         return None
@@ -52,7 +52,7 @@ class FlockjayReflectRetryPlugin(ReflectAndRetryToolPlugin):
         tool_args: dict[str, Any],
         tool_context: ToolContext,
         result: Any,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         if not isinstance(result, dict):
             return None
 

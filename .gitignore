@@ -1,6 +1,5 @@
 # Secrets
 .env
-flockjay_tokens.json
 
 # Local test attachments served via /samples
 # samples/
@@ -26,6 +25,3 @@ dist/
 .vscode/
 .idea/
 .DS_Store
-
-# Poetry
-poetry.lock

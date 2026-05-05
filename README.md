@@ -33,7 +33,7 @@ Agentic chat backend for Flockjay AI Agents. One `POST /chat` endpoint, one root
 
 ```bash
 # 1. Install
-cd flockjay_agents
+cd flockjay_ai_agents
 poetry install
 cp .env.example .env
 # Fill in:
@@ -82,15 +82,15 @@ curl -N -X POST http://localhost:8000/chat \
 
 ### Switching LLM providers
 
-The model is a hard-coded constant in `[app/agent/root_agent.py](app/agent/root_agent.py)`:
+The model is a hard-coded constant in [app/constants.py](app/constants.py):
 
 ```python
-LLM_MODEL: str = "gemini-2.5-flash"
+LLM_MODEL: str = "gemini-3-flash-preview"
 # LLM_MODEL = "anthropic/claude-sonnet-4-5"   # needs ANTHROPIC_API_KEY
 # LLM_MODEL = "openai/gpt-4o"                  # needs OPENAI_API_KEY
 ```
 
-The resolver routes `gemini-*` through ADK's native path and everything else through ADK's `LiteLlm` wrapper. Note that `GEMINI_API_KEY` is always required regardless of `LLM_MODEL` because the attachment embedder is Gemini-only.
+[app/agent/root_agent.py](app/agent/root_agent.py) routes `gemini-*` through ADK's native path and everything else through ADK's `LiteLlm` wrapper. `GEMINI_API_KEY` is always required regardless of `LLM_MODEL` — the attachment embedder is Gemini-only.
 
 ---
 
@@ -153,17 +153,20 @@ A single ADK `LlmAgent` holds the 18 Flockjay MCP tools plus 2 attachment tools 
 
 Gemini 2.5 Flash supports parallel function calling natively, so multi-part questions ("compare X and tell me what the playbook says") issue multiple tool calls in a single turn.
 
-### Per-request MCP toolset
+### MCP toolset
 
-Every `/chat` call rebuilds `MCPToolset(StreamableHTTPConnectionParams(...))` against the caller's auth. This scopes tenant auth to the request and guarantees we never hand one user's session to another's. The toolset is closed in a `finally` after each turn.
+[app/agent/mcp_toolset.py](app/agent/mcp_toolset.py) builds `MCPToolset(StdioConnectionParams(...))` over an `npx -y mcp-remote <FLOCKJAY_MCP_URL>` child. `mcp-remote` handles OAuth (discovery, dynamic client registration, PKCE, token cache, silent refresh) and proxies streamable-HTTP MCP traffic over stdio. Tokens are cached on the host at `~/.mcp-auth/`.
+
+A fresh toolset is built per `/chat` call and closed by `Runner.__aexit__`. The OAuth identity is the host's single cached token — for true multi-tenant deployment the bootstrap needs to be replaced with per-caller token resolution (see Production note above).
 
 ### Attachment handling — the interesting bit
 
 Stuffing raw attachments into the LLM prompt would blow the context window and bury signal in noise. Two things happen instead:
 
 1. **Pre-ingest at `/chat` time, outside the LLM loop.** Download → extract text (PDF via PyMuPDF, JSON transcripts by concatenating turns, subtitles by stripping cues) → token-aware chunk via tiktoken (`CHUNK_SIZE=800`, `CHUNK_OVERLAP=100`) → batch embed via Gemini (`gemini-embedding-001`, L2-normalized) → register in an in-memory Chroma collection named `att_<sha256[:40]>`.
-2. **Two agent tools wrap it:**
+2. **Three agent tools wrap it:**
    - `search_attachment(attachment_id, query)` — top-k chunks for a specific query, with a similarity floor (`MIN_SIMILARITY=0.25`, `TOP_K=5`) so irrelevant attachments return `{ok: false, reason: "no chunks scored above similarity threshold"}` instead of noise.
+   - `get_attachment_summary(attachment_id)` — returns the cached one-shot summary; preferred over `search_attachment` for broad questions about themes/stakeholders/outcomes.
    - `list_active_attachments()` — useful when the user refers to "the call" without naming an id.
 
 The agent picks between targeted semantic search and enumeration; the instruction makes the tradeoff explicit. A short session note ("this session has attachments — use the attachment tools…") is appended to the agent's instruction whenever the registry has records for the session, so the model knows attachments exist without having to be told in the user message.
@@ -214,18 +217,9 @@ What this does **not** cover: re-establishing a dead `mcp-remote` session within
 
 ### Observability — Opik
 
-Per-turn agent tracing via [Opik](https://www.comet.com/docs/opik/) is wired in but **off by default**. When enabled, every `/chat` request produces a single Opik trace containing all model calls, tool calls (MCP and attachment), and sub-agent spans, tagged with the `session_id` and `user_id`:
+Per-turn agent tracing via [Opik](https://www.comet.com/docs/opik/) is wired in but **off by default**. When enabled, every `/chat` request produces a single Opik trace containing all model calls, tool calls (MCP and attachment), and tool errors handled by the reflect-retry plugin.
 
-```python
-from opik.integrations.adk import OpikTracer, track_adk_agent_recursive
-
-tracer = OpikTracer(project_name="flockjay-agents", metadata={"session_id": ..., "user_id": ...})
-track_adk_agent_recursive(agent, tracer)
-# ... runner.run_async() ...
-tracer.flush()
-```
-
-Setting `OPIK_API_KEY` is the toggle. The integration degrades gracefully: missing key, import error, or runtime failure logs a warning and falls back to no-op tracing — `/chat` is never blocked by observability.
+The integration is wired in [app/agent/root_agent.py](app/agent/root_agent.py) — when `OPIK_API_KEY` is set, the module instantiates an `OpikTracer` once and passes its `before_*` / `after_*` hooks (agent, model, tool) as constructor callbacks on the root `LlmAgent`. Setting `OPIK_API_KEY` is the only toggle. The integration degrades gracefully: missing key, import error, or runtime failure logs a warning and falls back to no-op tracing — `/chat` is never blocked by observability.
 
 ---
 

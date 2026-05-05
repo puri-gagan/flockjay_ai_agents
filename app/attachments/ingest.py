@@ -10,9 +10,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
 
 import httpx
 import tiktoken
@@ -101,14 +101,14 @@ async def register_attachment(
         session_id=session_id,
         attachment_id=attachment_id,
         source_url=url,
-        type=(type_hint or _infer_type(content_type, Path(url).suffix)),
+        content_type=(type_hint or _infer_type(content_type, Path(url).suffix)),
         chunks=chunks,
         embeddings=embeddings,
         summary=summary,
     )
     log.info(
-        "attachment %s: ingested OK (type=%s chunks=%d)",
-        attachment_id, record.type, len(chunks),
+        "attachment %s: ingested OK (content_type=%s chunks=%d)",
+        attachment_id, record.content_type, len(chunks),
     )
     return record
 
@@ -146,12 +146,12 @@ async def _download(url: str) -> AsyncIterator[tuple[Path, str | None]]:
             pass
 
 
-ENCODER = tiktoken.get_encoding(TIKTOKEN_ENCODING)
+_ENCODER = tiktoken.get_encoding(TIKTOKEN_ENCODING)
 
 
 def _chunk(text: str, size: int, overlap: int) -> list[str]:
     """Token-aware chunking with overlap. Falls back to raw text if too short."""
-    tokens = ENCODER.encode(text)
+    tokens = _ENCODER.encode(text)
     if len(tokens) <= size:
         return [text]
 
@@ -161,7 +161,7 @@ def _chunk(text: str, size: int, overlap: int) -> list[str]:
         window = tokens[start : start + size]
         if not window:
             break
-        out.append(ENCODER.decode(window))
+        out.append(_ENCODER.decode(window))
         if start + size >= len(tokens):
             break
     return out

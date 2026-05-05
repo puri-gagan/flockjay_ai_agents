@@ -1,8 +1,9 @@
 """Batched Gemini embedding helper.
 
-Uses the ``google-genai`` SDK 
-Vectors are L2-normalized before return so the registry's
-``1 - dist/2`` cosine proxy in Chroma stays correct.
+Uses the ``google-genai`` SDK. Vectors are L2-normalized before return so
+the registry's ``1 - dist/2`` cosine-similarity proxy on Chroma's L2
+distance stays correct — Gemini does not pre-normalize outputs below
+3072 dimensions.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from typing import Iterable
+from collections.abc import Iterable
 
 from google import genai
 from google.genai import types
@@ -48,7 +49,7 @@ class GeminiEmbedder:
             config=self._config,
         )
         embeddings = resp.embeddings or []
-        return [_l2_normalize(e.values or []) for e in embeddings]  # vectors less than 3072 dims are not pre-normalized by the API
+        return [_l2_normalize(e.values or []) for e in embeddings]
 
 
 def _l2_normalize(vec: list[float]) -> list[float]:

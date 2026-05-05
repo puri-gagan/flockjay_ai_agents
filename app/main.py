@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.chat.router import router as chat_router
-from app.runtime.runner import get_runtime, init_runtime 
+from app.runtime.runner import get_runtime, init_runtime
 from app.settings import settings
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"

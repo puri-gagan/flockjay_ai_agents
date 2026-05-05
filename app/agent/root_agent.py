@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Union
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
@@ -25,7 +24,7 @@ from app.settings import settings
 log = logging.getLogger(__name__)
 
 
-def _resolve_model(model: str) -> Union[str, LiteLlm]:
+def _resolve_model(model: str) -> str | LiteLlm:
     """Native string for Gemini, LiteLlm wrapper for everything else."""
     lowered = model.lower()
     if lowered.startswith("gemini-") or lowered.startswith("models/gemini"):

@@ -1,6 +1,8 @@
 """FunctionTool wrappers exposed to the root agent.
 
-Docstrings as the descriptions are important, ADK feeds them to the LLM as the tool's description.
+Docstrings double as tool descriptions: ADK feeds them to the LLM as the
+tool's natural-language description, so they need to be precise about
+when to call (and not call) each tool.
 """
 
 from __future__ import annotations
@@ -56,18 +58,13 @@ async def search_attachment(
     if _embedder is None:
         return {"ok": False, "reason": "embedder not initialized"}
 
-    session_id = tool_context._invocation_context.session.id
+    session_id = tool_context.session.id
     if not session_id:
         return {"ok": False, "reason": "no active session"}
 
     record = registry.get(session_id, attachment_id)
     if record is None:
-        available = [r.attachment_id for r in registry.list_for_session(session_id)]
-        return {
-            "ok": False,
-            "reason": f"no attachment '{attachment_id}' in this session",
-            "available_attachment_ids": available,
-        }
+        return _missing_attachment_error(session_id, attachment_id)
 
     try:
         [query_embedding] = await _embedder.embed([query])
@@ -100,21 +97,16 @@ def get_attachment_summary(attachment_id: str, tool_context: ToolContext) -> dic
     Args:
         attachment_id: the id from list_active_attachments or the session note.
 
-    Returns: summary (plain text), chunk_count, length_chars, source_url, type.
+    Returns: summary (plain text), chunk_count, length_chars, source_url, content_type.
     """
-    session_id = tool_context._invocation_context.session.id
+    session_id = tool_context.session.id
     record = registry.get(session_id, attachment_id)
     if record is None:
-        available = [r.attachment_id for r in registry.list_for_session(session_id)]
-        return {
-            "ok": False,
-            "reason": f"no attachment '{attachment_id}' in this session",
-            "available_attachment_ids": available,
-        }
+        return _missing_attachment_error(session_id, attachment_id)
     return {
         "ok": True,
         "attachment_id": record.attachment_id,
-        "type": record.type,
+        "content_type": record.content_type,
         "source_url": record.source_url,
         "chunk_count": record.chunk_count,
         "length_chars": record.length_chars,
@@ -128,7 +120,7 @@ def list_active_attachments(tool_context: ToolContext) -> dict[str, Any]:
     Use this when the user refers to "the call", "the transcript", or "this
     document" without naming an attachment_id.
     """
-    session_id = tool_context._invocation_context.session.id
+    session_id = tool_context.session.id
     records = registry.list_for_session(session_id)
     return {
         "ok": True,
@@ -136,7 +128,7 @@ def list_active_attachments(tool_context: ToolContext) -> dict[str, Any]:
         "attachments": [
             {
                 "attachment_id": r.attachment_id,
-                "type": r.type,
+                "content_type": r.content_type,
                 "chunk_count": r.chunk_count,
                 "source_url": r.source_url,
             }
@@ -152,3 +144,13 @@ def build_attachment_tools() -> list[FunctionTool]:
         FunctionTool(get_attachment_summary),
         FunctionTool(list_active_attachments),
     ]
+
+
+def _missing_attachment_error(session_id: str, attachment_id: str) -> dict[str, Any]:
+    """Build the `ok=false` response for an attachment id the session doesn't have."""
+    available = [r.attachment_id for r in registry.list_for_session(session_id)]
+    return {
+        "ok": False,
+        "reason": f"no attachment '{attachment_id}' in this session",
+        "available_attachment_ids": available,
+    }

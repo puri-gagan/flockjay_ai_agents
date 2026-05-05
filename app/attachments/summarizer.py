@@ -14,17 +14,14 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
-from app.constants import APP_NAME, SUMMARIZER_MODEL
+from app.constants import APP_NAME, SUMMARIZER_MODEL, SUMMARIZER_USER_ID
 
 log = logging.getLogger(__name__)
 
-_INSTRUCTION = """You summarize long Documents mostly related to sales to short summarized version.
-Capture the main themes, key stakeholders mentioned,
-objections raised, and any decisions or outcomes. Do not invent content not
-present in the input.
+_INSTRUCTION = """You summarize long sales-related documents into a short plain-text
+version. Capture the main themes, key stakeholders, objections raised, and any
+decisions or outcomes. Do not invent content not present in the input.
 """
-
-SUMMARIZER_USER_ID = "summarizer"
 
 
 class Summarizer:

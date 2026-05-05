@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 from google import genai
 from google.adk.artifacts import InMemoryArtifactService
@@ -38,7 +37,7 @@ class Runtime:
         return
 
 
-_runtime: Optional[Runtime] = None
+_runtime: Runtime | None = None
 
 
 def init_runtime() -> Runtime:

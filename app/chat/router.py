@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -32,7 +32,7 @@ async def chat(req: ChatRequest) -> StreamingResponse:
     runtime = get_runtime()
     session_id = req.session_id or str(uuid.uuid4())
     user_id = req.user_id or DEFAULT_USER_ID
-    
+
     # log message preview
     preview = req.message[:200] + ("…" if len(req.message) > 200 else "")
     log.info(
@@ -93,7 +93,7 @@ async def _stream_agent_reply(
     ) as runner:
         try:
             for err in attachment_errors:
-                yield f"[attachment error: {err}]\n\n".encode("utf-8")
+                yield f"[attachment error: {err}]\n\n".encode()
 
             async for event in runner.run_async(
                 user_id=user_id,
@@ -116,7 +116,7 @@ async def _stream_agent_reply(
         except Exception as exc:
             log.exception("Agent stream failed")
             # Headers are already on the wire; communicate the error inline.
-            yield f"\n\n[stream error: {exc.__class__.__name__}: {exc}]".encode("utf-8")
+            yield f"\n\n[stream error: {exc.__class__.__name__}: {exc}]".encode()
 
 
 async def _ingest_new_attachments(
