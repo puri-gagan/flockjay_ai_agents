@@ -11,12 +11,24 @@ import logging
 import os
 from dataclasses import dataclass
 
+from google.adk.apps.app import EventsCompactionConfig
+from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
 from google.adk.artifacts import InMemoryArtifactService
+from google.adk.models.google_llm import Gemini
 from google.adk.sessions import InMemorySessionService
 
 from app.attachments.embedder import Embedder, build_embedder
 from app.attachments.tools import set_embedder
-from app.constants import EMBEDDING_MODEL, EMBEDDING_OUTPUT_DIM, LLM_MODEL
+from app.constants import (
+    COMPACTION_EVENT_RETENTION_SIZE,
+    COMPACTION_INTERVAL,
+    COMPACTION_OVERLAP_SIZE,
+    COMPACTION_SUMMARIZER_MODEL,
+    COMPACTION_TOKEN_THRESHOLD,
+    EMBEDDING_MODEL,
+    EMBEDDING_OUTPUT_DIM,
+    LLM_MODEL,
+)
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -27,6 +39,7 @@ class Runtime:
     session_service: InMemorySessionService
     artifact_service: InMemoryArtifactService
     embedder: Embedder
+    compaction_config: EventsCompactionConfig
 
     async def aclose(self) -> None:
         # SDKs (google-genai, openai) manage their own httpx pools internally;
@@ -47,17 +60,29 @@ def init_runtime() -> Runtime:
 
     embedder = build_embedder(EMBEDDING_MODEL, EMBEDDING_OUTPUT_DIM)
 
+    compaction_config = EventsCompactionConfig(
+        compaction_interval=COMPACTION_INTERVAL,
+        overlap_size=COMPACTION_OVERLAP_SIZE,
+        token_threshold=COMPACTION_TOKEN_THRESHOLD,
+        event_retention_size=COMPACTION_EVENT_RETENTION_SIZE,
+        summarizer=LlmEventSummarizer(llm=Gemini(model=COMPACTION_SUMMARIZER_MODEL)),
+    )
+
     _runtime = Runtime(
         session_service=InMemorySessionService(),
         artifact_service=InMemoryArtifactService(),
         embedder=embedder,
+        compaction_config=compaction_config,
     )
 
     set_embedder(embedder)
 
     log.info(
-        "Runtime initialized (llm=%s, embedding=%s, dim=%d)",
+        "Runtime initialized (llm=%s, embedding=%s, dim=%d, "
+        "compaction_token_threshold=%d, retention=%d, summarizer=%s)",
         LLM_MODEL, EMBEDDING_MODEL, EMBEDDING_OUTPUT_DIM,
+        COMPACTION_TOKEN_THRESHOLD, COMPACTION_EVENT_RETENTION_SIZE,
+        COMPACTION_SUMMARIZER_MODEL,
     )
     return _runtime
 

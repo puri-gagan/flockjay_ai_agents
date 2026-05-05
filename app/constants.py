@@ -37,3 +37,18 @@ MIN_SIMILARITY: float = 0.25  # cosine similarity floor for hits
 # Flockjay MCP toolset
 MCP_TIMEOUT_SECONDS: float = 30.0
 MCP_SSE_READ_TIMEOUT_SECONDS: float = 300.0
+
+# Context window management constants
+#   1. Token threshold (primary): summarize when the most recent prompt's
+#      token count crosses COMPACTION_TOKEN_THRESHOLD; keep the last
+#      COMPACTION_EVENT_RETENTION_SIZE raw events.
+#   2. Sliding window (backstop): summarize every COMPACTION_INTERVAL user
+#      invocations; carry COMPACTION_OVERLAP_SIZE raw invocations forward.
+# Summaries are produced by COMPACTION_SUMMARIZER_MODEL — a Gemini Flash
+# pinned independently from LLM_MODEL so summarization stays cheap even when
+# the agent itself runs a Pro / non-Gemini model.
+COMPACTION_TOKEN_THRESHOLD: int = 80_000
+COMPACTION_EVENT_RETENTION_SIZE: int = 4
+COMPACTION_INTERVAL: int = 50
+COMPACTION_OVERLAP_SIZE: int = 2
+COMPACTION_SUMMARIZER_MODEL: str = "gemini-2.5-flash"

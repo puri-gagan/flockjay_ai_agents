@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.apps.app import App
 from google.adk.runners import Runner
 from google.genai.types import Content, Part
 
@@ -20,7 +21,7 @@ from app.attachments.ingest import AttachmentError, register_attachment
 from app.attachments.registry import registry
 from app.auth import require_api_key
 from app.chat.schemas import Attachment, ChatRequest
-from app.constants import DEFAULT_USER_ID
+from app.constants import APP_NAME, DEFAULT_USER_ID
 from app.runtime.runner import get_runtime
 
 log = logging.getLogger(__name__)
@@ -83,12 +84,17 @@ async def _stream_agent_reply(
     """
     new_message = Content(role="user", parts=[Part.from_text(text=user_message)])
 
+    app = App(
+        name=APP_NAME,
+        root_agent=agent,
+        plugins=[build_reflect_retry_plugin(max_retries=2)],
+        events_compaction_config=runtime.compaction_config,
+    )
+
     async with Runner(
-        app_name="flockjay",
-        agent=agent,
+        app=app,
         session_service=runtime.session_service,
         artifact_service=runtime.artifact_service,
-        plugins=[build_reflect_retry_plugin(max_retries=2)],
         auto_create_session=True,
     ) as runner:
         try:
